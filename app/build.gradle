@@ -1,0 +1,57 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+    defaultConfig {
+        applicationId "com.oubowu.robustforsdk"
+        minSdkVersion 15
+        targetSdkVersion 26
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            // abiFilters 'armeabi','mips','armeabi-v7a','x86'
+        }
+
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    sourceSets {
+        main {
+            // 指定jni的文件源为文件夹libs
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+}
+
+repositories {
+    // 指定aar文件的路径为文件夹libs
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    compile 'com.android.support:appcompat-v7:26.+'
+    compile 'com.android.support.constraint:constraint-layout:1.0.2'
+    testCompile 'junit:junit:4.12'
+    if (isAppModule.toBoolean()) {
+        compile 'com.orhanobut:logger:2.1.1'
+        compile(name: 'library-develop-release', ext: 'aar')
+        //bmob-sdk
+        compile 'cn.bmob.android:bmob-sdk:3.5.7'
+    } else {
+        debugCompile project(path: ':sdk', configuration: 'developDebug')
+        releaseCompile project(path: ':sdk', configuration: 'developRelease')
+    }
+}

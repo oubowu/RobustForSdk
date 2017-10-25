@@ -1,0 +1,292 @@
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+// apply plugin表示该项目会使用指定的插件,sdk对应的是com.android.library
+if (isAppModule.toBoolean()) {
+    apply plugin: 'com.android.application'
+    if (isPatchModule.toBoolean()) {
+        //制作补丁时将这个打开，auto-patch-plugin紧跟着com.android.application
+        apply plugin: 'auto-patch-plugin'
+    }
+    apply plugin: 'robust'
+} else {
+    apply plugin: 'com.android.library'
+}
+
+android {
+    compileSdkVersion 26
+    buildToolsVersion "26.0.1"
+
+    defaultConfig {
+        minSdkVersion 15
+        targetSdkVersion 26
+        versionCode 1
+        versionName "2.6.0"
+
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+
+        consumerProguardFiles 'proguard-rules.pro'
+
+        ndk {
+//            abiFilters 'armeabi','mips','armeabi-v7a','x86'
+        }
+
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    //删除META-INF信息
+    packagingOptions {
+        exclude 'META-INF/rxjava.properties'
+        exclude 'META-INF/maven/com.squareup.okhttp3/okhttp/pom.xml'
+        exclude 'META-INF/maven/com.squareup.okhttp3/okhttp/pom.properties'
+        exclude 'META-INF/maven/com.squareup.okio/okio/pom.xml'
+        exclude 'META-INF/maven/com.squareup.okio/okio/pom.properties'
+        exclude 'META-INF/maven/com.google.code.gson/gson/pom.xml'
+        exclude 'META-INF/maven/com.google.code.gson/gson/pom.properties'
+    }
+
+    sourceSets {
+        main {
+            // 指定jni的文件源为文件夹libs
+            jniLibs.srcDirs = ['libs']
+
+            // Application和Library清单文件处理方式不同
+            if (isAppModule.toBoolean()) {
+                manifest.srcFile 'src/main/debug/AndroidManifest.xml'
+            } else {
+                manifest.srcFile 'src/main/release/AndroidManifest.xml'
+            }
+
+        }
+    }
+
+    // 调用方在build的时候默认是build的library的release版本，这里禁用这种方式
+    publishNonDefault true
+
+    // 配置渠道
+    productFlavors {
+        // 测试渠道
+        develop {}
+        // 默认
+        normal {}
+    }
+
+}
+
+dependencies {
+    if (isAppModule.toBoolean()) {
+        // 制作补丁的时候需要第三方jar包不能打入apk里面，因为我们要去apk对应生成的jar包，由此避免宿主与我们sdk造成第三方jar包冲突
+        provided fileTree(dir: 'libs', include: ['*.jar'])
+    } else {
+        // library模式的话，打release混淆包的话也会把第三方jar包打进去，由此不要compile
+        compile fileTree(dir: 'libs', include: ['*.jar'])
+    }
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    testCompile 'junit:junit:4.12'
+    // 制作补丁的时候需要robust需要打入包里面，不用宿主再去compile，这样sdk的热修复宿主无感知
+    compile 'com.meituan.robust:robust:0.4.7'
+    // 远程依赖aar包的话不支持provided这种形式，由此需要在打jar包的时候过滤掉
+    compile 'com.orhanobut:logger:2.1.1'
+    //bmob-sdk
+    compile 'cn.bmob.android:bmob-sdk:3.5.7'
+    compile files('libs/secret.jar')
+}
+
+///////////////////////////////////////////////////////////////////////////
+// 以下是适用于Robust打包的所有task
+///////////////////////////////////////////////////////////////////////////
+
+Pattern p = Pattern.compile("^assemble(.*)Release\$")
+
+//读取文件并替换字符串
+static def fileReader(path, oldStr, newStr) {
+    def readerString = new File(path).getText('UTF-8')
+    for (int i = 0; i < oldStr.size(); i++) {
+        readerString = readerString.replaceFirst(oldStr[i], newStr[i])
+    }
+    return readerString
+}
+
+//写文件
+static def fileWrite(path, stringBuffer) {
+    new File(path).withWriter('UTF-8') {
+        within ->
+            within.append(stringBuffer)
+    }
+}
+
+// 创建目录
+static def createDir(String destDirName) {
+    File dir = new File(destDirName);
+    if (dir.exists()) {// 判断目录是否存在
+        System.out.println("创建目录失败，目标目录已存在！")
+        return false
+    }
+    if (!destDirName.endsWith(File.separator)) {// 结尾是否以"/"结束
+        destDirName = destDirName + File.separator
+    }
+    if (dir.mkdirs()) {// 创建目标目录
+        System.out.println("创建目录成功！" + destDirName)
+        return true
+    } else {
+        System.out.println("创建目录失败！")
+        return false
+    }
+}
+
+// 根据渠道生成打jar包和aar包的对应的task
+for (String flavor : android.productFlavors.names) {
+
+    tasks.create(name: 'jar_' + flavor, type: Jar) {
+
+        println "当前渠道是：" + flavor
+
+        baseName 'classes'
+
+        String intermediatesPath = buildDir.toString() + File.separator + "intermediates"
+        String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"
+        def zipFile = new File(robustJarPath)
+        FileTree jarTree = zipTree(zipFile)
+
+        from jarTree
+
+        File destDir = file(projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + 'release' + File.separator + 'origin')
+        setDestinationDir destDir
+
+        include {
+            // 只打包我们需要的类
+            it.path.startsWith('com/oubowu/sdk') || it.path.startsWith('com/meituan/robust') || it.path.startsWith('com/oubowu/secret')
+        }
+
+        exclude {
+             println "执行排除：" + it.path
+            it.path.startsWith('com/oubowu/sdk/R$') || it.path.startsWith('com/oubowu/sdk/R.class') || it.path.startsWith('com/oubowu/sdk/MainActivity.class')
+        }
+
+        println '压缩jar包完毕！！！！！！！！'
+    }
+
+    tasks.create(name: 'aar_' + flavor, type: Zip) {
+        File destDir = file(projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + 'release' + File.separator + 'aar')
+        archiveName 'library-' + flavor + '-release.aar'
+        from projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + 'release' + File.separator + 'origin'
+        destinationDir destDir
+
+        println '压缩aar包完毕！！！！！！！！'
+    }
+
+}
+
+tasks.whenTaskAdded { task ->
+    if (!isAppModule.toBoolean()) {
+        // 不是Application模式不处理
+        return
+    }
+    // 在任务执行的时候，只要是执行assemble(渠道)Release的打APK任务，从robust同时打插桩的jar包的路径复制jar包到指定路径\build\outputs\robustjar\渠道\xxxx.jar
+    Matcher m = p.matcher(task.name)
+    if (m.find()) {
+        String flavor = m.group(1)
+        if (flavor.length() > 1) {
+            flavor = flavor.substring(0, 1).toLowerCase() + flavor.substring(1)
+        }
+
+        // 打release包之后进行资源的整合以及jar包去指定class文件，并且生成aar包
+        task.doLast {
+
+            delete {
+                delete projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + "release"
+            }
+
+            String intermediatesPath = buildDir.toString() + File.separator + "intermediates"
+
+            String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"
+            String assetsPath = intermediatesPath + File.separator + "assets" + File.separator + flavor + File.separator + "release"
+            String libsPath = intermediatesPath + File.separator + "jniLibs" + File.separator + flavor + File.separator + "release"
+            // String resPath = intermediatesPath + File.separator + "res" + File.separator + "merged" + File.separator + flavor + File.separator + "release"
+            String resPath = projectDir.toString() + File.separator + "src" + File.separator + "main" + File.separator + "res"
+            String resIdPath = intermediatesPath + File.separator + "symbols" + File.separator + flavor + File.separator + "release"
+            String manifestPath = intermediatesPath + File.separator + "manifests" + File.separator + "full" + File.separator + flavor + File.separator + "release"
+
+            String destination = projectDir.toString() + File.separator + /*'outputs' + File.separator +*/ 'robustjar' + File.separator + flavor + File.separator + 'release' + File.separator + 'origin'
+
+            // 貌似aidl的文件夹没啥用，打包会根据例如G:\\sms-hotfix\\SmsParsingForRcs-Library\\library\\src\\main\\aidl\\com\\cmic\\IMyAidlInterface.aidl的定义代码生成com.cmic.IMyAidlInterface到jar包里面，因此aidl仅仅是空文件夹
+            // String aidlPath = buildDir.toString() + File.separator + "generated" + File.separator + "source" + File.separator + "aidl" + File.separator + flavor + File.separator + "release"
+
+            File file = file(robustJarPath)
+            if (file.exists()) {
+                println '渠道是：' + flavor + '；开始复制robust插桩jar包'
+                copy {
+                    from(assetsPath) {
+                        into 'assets'
+                    }
+//                    from(libsPath) {
+//                        into 'libs'
+//                        include '**/*.jar'
+//                        exclude {
+//                            // println it.path+";"+it.isDirectory()
+//                            it.isDirectory()
+//                        }
+//                    }
+                    from(libsPath) {
+                        into 'jni'
+                        include '**/*/*.so'
+                    }
+                    from(resPath) {
+                        exclude '/layout/activity_main.xml'
+                        exclude {
+                            it.isDirectory() && it.getFile().listFiles().length == 0
+                        }
+                        into 'res'
+                    }
+                    // from(aidlPath) {
+                    //     into 'aidl'
+                    // }
+                    from resIdPath
+
+                    into destination
+
+                }
+
+                copy {
+                    from(buildDir.toString() + File.separator + 'outputs' + File.separator + 'mapping' + File.separator + flavor + File.separator + 'release') {
+                        include 'mapping.txt'
+                    }
+
+                    into projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + 'release'
+                }
+
+                copy {
+                    from(buildDir.toString() + File.separator + 'outputs' + File.separator + 'robust') {
+                        include 'methodsMap.robust'
+                    }
+
+                    into projectDir.toString() + File.separator + 'robustjar' + File.separator + flavor + File.separator + 'release'
+                }
+
+                createDir(destination + File.separator + "aidl")
+                createDir(destination + File.separator + "assets")
+                createDir(destination + File.separator + "jni")
+                createDir(destination + File.separator + "libs")
+                createDir(destination + File.separator + "res")
+
+                def oldStr = ["<application[\\s\\S]*?>", "<activity[\\s\\S]*?</activity>"]
+                def newStr = ["<application\n" + "        android:allowBackup=\"true\"\n" + "        android:supportsRtl=\"true\">", ""]
+                String strBuffer = fileReader(manifestPath + File.separator + "AndroidManifest.xml", oldStr, newStr)
+                fileWrite(destination + File.separator + "AndroidManifest.xml", strBuffer)
+                println '输出robust插桩jar包成功!'
+
+                tasks.findByName('jar_' + flavor).execute()
+
+                tasks.findByName('aar_' + flavor).execute()
+
+            }
+        }
+    }
+}
