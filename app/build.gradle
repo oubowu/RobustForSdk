@@ -1,12 +1,12 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 26
-    buildToolsVersion "26.0.1"
+    compileSdkVersion 27
+    buildToolsVersion '27.0.0'
     defaultConfig {
         applicationId "com.oubowu.robustforsdk"
         minSdkVersion 15
-        targetSdkVersion 26
+        targetSdkVersion 27
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
@@ -15,10 +15,33 @@ android {
             // abiFilters 'armeabi','mips','armeabi-v7a','x86'
         }
 
+        if (!isAppModule.toBoolean()) {
+            flavorDimensions "test"
+        }
+
+    }
+    // 签名的配置
+    signingConfigs {
+        debug {
+
+        }
+        // release版本的签名
+        release {
+            // 签名的一些信息
+            keyAlias '12345678'
+            keyPassword '12345678'
+            storeFile file('./oubowu_test_sign.jks')
+            storePassword '12345678'
+        }
     }
     buildTypes {
-        release {
+        debug {
             minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -28,6 +51,23 @@ android {
             jniLibs.srcDirs = ['libs']
         }
     }
+    if (!isAppModule.toBoolean()) {
+        // 配置渠道
+        productFlavors {
+            // 测试渠道
+            developApp {
+                dimension "test"
+                matchingFallbacks = ['develop']
+            }
+            // 默认
+            normalApp {
+                dimension "test"
+                matchingFallbacks = ['normal']
+            }
+        }
+    }
+
+
 }
 
 repositories {
@@ -38,20 +78,21 @@ repositories {
 }
 
 dependencies {
-    compile fileTree(include: ['*.jar'], dir: 'libs')
-    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
-    compile 'com.android.support:appcompat-v7:26.+'
-    compile 'com.android.support.constraint:constraint-layout:1.0.2'
-    testCompile 'junit:junit:4.12'
+    implementation 'com.android.support:appcompat-v7:27.0.0'
+    implementation 'com.android.support.constraint:constraint-layout:1.0.2'
+    testImplementation 'junit:junit:4.12'
     if (isAppModule.toBoolean()) {
-        compile 'com.orhanobut:logger:2.1.1'
-        compile(name: 'library-develop-release', ext: 'aar')
+        implementation 'com.orhanobut:logger:2.1.1'
+        implementation(name: 'library-develop-release', ext: 'aar')
         //bmob-sdk
-        compile 'cn.bmob.android:bmob-sdk:3.5.7'
+        implementation 'cn.bmob.android:bmob-sdk:3.5.8'
     } else {
-        debugCompile project(path: ':sdk', configuration: 'developDebug')
-        releaseCompile project(path: ':sdk', configuration: 'developRelease')
+//        debugCompile project(path: ':sdk', configuration: 'developDebug')
+//        releaseCompile project(path: ':sdk', configuration: 'developRelease')
+        implementation project(':sdk')
     }
 }

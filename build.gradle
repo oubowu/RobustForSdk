@@ -5,15 +5,15 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:2.3.3'
+        classpath 'com.android.tools.build:gradle:3.0.0'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files
 
         // Application模式下引入Robust脚本插件
         if (isAppModule.toBoolean()) {
-            classpath 'com.meituan.robust:gradle-plugin:0.4.7'
-            classpath 'com.meituan.robust:auto-patch-plugin:0.4.7'
+            classpath 'com.meituan.robust:gradle-plugin:0.4.71'
+            classpath 'com.meituan.robust:auto-patch-plugin:0.4.71'
         }
 
     }
@@ -21,6 +21,7 @@ buildscript {
 
 allprojects {
     repositories {
+        google()
         jcenter()
         //Bmob的maven仓库地址，必须填写
         maven { url "https://raw.github.com/bmob/bmob-android-sdk/master" }

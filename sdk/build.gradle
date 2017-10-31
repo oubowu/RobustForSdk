@@ -14,22 +14,24 @@ if (isAppModule.toBoolean()) {
 }
 
 android {
-    compileSdkVersion 26
-    buildToolsVersion "26.0.1"
+    compileSdkVersion 27
+    buildToolsVersion '27.0.0'
 
     defaultConfig {
         minSdkVersion 15
-        targetSdkVersion 26
+        targetSdkVersion 27
         versionCode 1
         versionName "2.6.0"
 
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
 
-        consumerProguardFiles 'proguard-rules.pro'
+        consumerProguardFiles 'lib-proguard-rules.pro'
 
         ndk {
 //            abiFilters 'armeabi','mips','armeabi-v7a','x86'
         }
+
+        flavorDimensions "test"
 
     }
     buildTypes {
@@ -66,14 +68,18 @@ android {
     }
 
     // 调用方在build的时候默认是build的library的release版本，这里禁用这种方式
-    publishNonDefault true
+    // publishNonDefault true
 
     // 配置渠道
     productFlavors {
         // 测试渠道
-        develop {}
+        develop {
+            dimension "test"
+        }
         // 默认
-        normal {}
+        normal {
+            dimension "test"
+        }
     }
 
 }
@@ -81,22 +87,22 @@ android {
 dependencies {
     if (isAppModule.toBoolean()) {
         // 制作补丁的时候需要第三方jar包不能打入apk里面，因为我们要去apk对应生成的jar包，由此避免宿主与我们sdk造成第三方jar包冲突
-        provided fileTree(dir: 'libs', include: ['*.jar'])
+        compileOnly fileTree(dir: 'libs', include: ['*.jar'])
     } else {
         // library模式的话，打release混淆包的话也会把第三方jar包打进去，由此不要compile
-        compile fileTree(dir: 'libs', include: ['*.jar'])
+        implementation fileTree(dir: 'libs', include: ['*.jar'])
     }
-    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+    androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
-    testCompile 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.12'
     // 制作补丁的时候需要robust需要打入包里面，不用宿主再去compile，这样sdk的热修复宿主无感知
-    compile 'com.meituan.robust:robust:0.4.7'
+    implementation 'com.meituan.robust:robust:0.4.71'
     // 远程依赖aar包的话不支持provided这种形式，由此需要在打jar包的时候过滤掉
-    compile 'com.orhanobut:logger:2.1.1'
+    api 'com.orhanobut:logger:2.1.1'
     //bmob-sdk
-    compile 'cn.bmob.android:bmob-sdk:3.5.7'
-    compile files('libs/secret.jar')
+    implementation 'cn.bmob.android:bmob-sdk:3.5.8'
+    api files('libs/secret.jar')
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -151,7 +157,8 @@ for (String flavor : android.productFlavors.names) {
         baseName 'classes'
 
         String intermediatesPath = buildDir.toString() + File.separator + "intermediates"
-        String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"
+        // String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"
+        String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "0.jar"
         def zipFile = new File(robustJarPath)
         FileTree jarTree = zipTree(zipFile)
 
@@ -206,7 +213,7 @@ tasks.whenTaskAdded { task ->
 
             String intermediatesPath = buildDir.toString() + File.separator + "intermediates"
 
-            String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"
+            String robustJarPath = intermediatesPath + File.separator + "transforms" + File.separator + "proguard" + File.separator + flavor + File.separator + "release" + File.separator + "0.jar"/*+ File.separator + "jars" + File.separator + "3" + File.separator + "1f" + File.separator + "main.jar"*/
             String assetsPath = intermediatesPath + File.separator + "assets" + File.separator + flavor + File.separator + "release"
             String libsPath = intermediatesPath + File.separator + "jniLibs" + File.separator + flavor + File.separator + "release"
             // String resPath = intermediatesPath + File.separator + "res" + File.separator + "merged" + File.separator + flavor + File.separator + "release"
@@ -253,6 +260,24 @@ tasks.whenTaskAdded { task ->
                     into destination
 
                 }
+
+                copy {
+                    // 复制供宿主的混淆规则
+                    def files = android.defaultConfig.consumerProguardFiles
+//                    println '混淆文件路径：'+files.size()
+                    if (files != null && files.size() > 0) {
+                        def file1 = files.get(0);
+//                        println '混淆文件路径：'+file1.path
+                        from file1
+//                        rename 'proguard.txt'
+//                        into destination
+                        from file1.path
+                        into destination
+                        rename(file1.name, 'proguard.txt')
+
+                    }
+                }
+
 
                 copy {
                     from(buildDir.toString() + File.separator + 'outputs' + File.separator + 'mapping' + File.separator + flavor + File.separator + 'release') {
