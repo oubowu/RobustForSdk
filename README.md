@@ -48,6 +48,22 @@ isAppModule=true
 isPatchModule=false
 ```
 
+apply plugin的配置
+```
+// apply plugin表示该项目会使用指定的插件,sdk对应的是com.android.library
+if (isAppModule.toBoolean()) {
+    # Application模式，使用robust
+    apply plugin: 'com.android.application'
+    if (isPatchModule.toBoolean()) {
+        //制作补丁时将这个打开，auto-patch-plugin紧跟着com.android.application
+        apply plugin: 'auto-patch-plugin'
+    }
+    apply plugin: 'robust'
+} else {
+    apply plugin: 'com.android.library'
+}
+```
+
 配置两个渠道
 ```
     // 配置渠道
