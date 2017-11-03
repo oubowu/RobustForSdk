@@ -6205,7 +6205,7 @@ com.meituan.robust.PatchProxy -> com.meituan.robust.PatchProxy:
 com.meituan.robust.PatchedClassInfo -> com.meituan.robust.PatchedClassInfo:
     java.lang.String patchedClassName -> patchedClassName
     java.lang.String patchClassName -> patchClassName
-    10:13:void <init>(java.lang.String,java.lang.String) -> <init>
+    11:14:void <init>(java.lang.String,java.lang.String) -> <init>
 com.meituan.robust.PatchesInfo -> com.meituan.robust.PatchesInfo:
     java.util.List getPatchedClassesInfo() -> getPatchedClassesInfo
 com.meituan.robust.R -> com.meituan.robust.R:
@@ -6275,6 +6275,7 @@ com.meituan.robust.utils.PatchTemplate -> com.meituan.robust.utils.PatchTemplate
     15:16:void <init>() -> <init>
     22:22:java.lang.Object accessDispatch(java.lang.String,java.lang.Object[]) -> accessDispatch
     27:27:boolean isSupport(java.lang.String,java.lang.Object[]) -> isSupport
+    32:37:java.lang.Object fixObj(java.lang.Object) -> fixObj
     18:18:void <clinit>() -> <clinit>
 com.orhanobut.logger.AndroidLogAdapter -> com.orhanobut.logger.AndroidLogAdapter:
     com.orhanobut.logger.FormatStrategy formatStrategy -> formatStrategy
@@ -6481,37 +6482,37 @@ com.oubowu.sdk.Patch -> com.oubowu.sdk.Patch:
 com.oubowu.sdk.SdkTest -> com.oubowu.sdk.SdkTest:
     com.meituan.robust.ChangeQuickRedirect changeQuickRedirect -> changeQuickRedirect
     21:21:void <init>() -> <init>
-    26:151:void init(android.content.Context) -> init
-    156:169:void callBugMethod(android.content.Context) -> callBugMethod
+    25:111:void init(android.content.Context) -> init
+    116:129:void callBugMethod(android.content.Context) -> callBugMethod
 com.oubowu.sdk.SdkTest$1 -> com.oubowu.sdk.SdkTest$1:
-    27:27:void <init>() -> <init>
-    30:30:boolean isLoggable(int,java.lang.String) -> isLoggable
+    26:26:void <init>() -> <init>
+    29:29:boolean isLoggable(int,java.lang.String) -> isLoggable
 com.oubowu.sdk.SdkTest$2 -> com.oubowu.sdk.SdkTest$2:
     com.meituan.robust.ChangeQuickRedirect changeQuickRedirect -> a
-    78:78:void <init>() -> <init>
-    81:89:void onPatchListFetched(boolean,boolean,java.util.List) -> onPatchListFetched
-    93:94:void onPatchFetched(boolean,boolean,com.meituan.robust.Patch) -> onPatchFetched
-    98:99:void onPatchApplied(boolean,com.meituan.robust.Patch) -> onPatchApplied
-    103:104:void logNotify(java.lang.String,java.lang.String) -> logNotify
-    108:109:void exceptionNotify(java.lang.Throwable,java.lang.String) -> exceptionNotify
+    38:38:void <init>() -> <init>
+    41:49:void onPatchListFetched(boolean,boolean,java.util.List) -> onPatchListFetched
+    53:54:void onPatchFetched(boolean,boolean,com.meituan.robust.Patch) -> onPatchFetched
+    58:59:void onPatchApplied(boolean,com.meituan.robust.Patch) -> onPatchApplied
+    63:64:void logNotify(java.lang.String,java.lang.String) -> logNotify
+    68:69:void exceptionNotify(java.lang.Throwable,java.lang.String) -> exceptionNotify
 com.oubowu.sdk.SdkTest$3 -> com.oubowu.sdk.SdkTest$3:
     com.meituan.robust.ChangeQuickRedirect changeQuickRedirect -> a
-    117:117:void <init>() -> <init>
-    120:128:void onPatchListFetched(boolean,boolean,java.util.List) -> onPatchListFetched
-    132:133:void onPatchFetched(boolean,boolean,com.meituan.robust.Patch) -> onPatchFetched
-    137:138:void onPatchApplied(boolean,com.meituan.robust.Patch) -> onPatchApplied
-    142:143:void logNotify(java.lang.String,java.lang.String) -> logNotify
-    147:148:void exceptionNotify(java.lang.Throwable,java.lang.String) -> exceptionNotify
+    77:77:void <init>() -> <init>
+    80:88:void onPatchListFetched(boolean,boolean,java.util.List) -> onPatchListFetched
+    92:93:void onPatchFetched(boolean,boolean,com.meituan.robust.Patch) -> onPatchFetched
+    97:98:void onPatchApplied(boolean,com.meituan.robust.Patch) -> onPatchApplied
+    102:103:void logNotify(java.lang.String,java.lang.String) -> logNotify
+    107:108:void exceptionNotify(java.lang.Throwable,java.lang.String) -> exceptionNotify
 com.oubowu.sdk.lib.PatchManipulateImp -> com.oubowu.sdk.a.a:
     com.meituan.robust.ChangeQuickRedirect changeQuickRedirect -> a
     boolean mOnlyLocal -> b
     java.lang.String mSavePatchName -> c
     45:51:void <init>(boolean,java.lang.String) -> <init>
-    64:140:java.util.List fetchPatchList(android.content.Context) -> fetchPatchList
-    166:182:void addPatchInfo(android.content.Context,java.lang.String,java.util.List) -> a
-    193:205:boolean verifyPatch(android.content.Context,com.meituan.robust.Patch) -> verifyPatch
-    209:233:void copy(java.lang.String,java.lang.String) -> a
-    241:241:boolean ensurePatchExist(com.meituan.robust.Patch) -> ensurePatchExist
+    64:141:java.util.List fetchPatchList(android.content.Context) -> fetchPatchList
+    167:183:void addPatchInfo(android.content.Context,java.lang.String,java.util.List) -> a
+    194:206:boolean verifyPatch(android.content.Context,com.meituan.robust.Patch) -> verifyPatch
+    210:234:void copy(java.lang.String,java.lang.String) -> a
+    242:242:boolean ensurePatchExist(com.meituan.robust.Patch) -> ensurePatchExist
     43:43:java.lang.String access$000(com.oubowu.sdk.lib.PatchManipulateImp) -> a
     43:43:void access$100(com.oubowu.sdk.lib.PatchManipulateImp,android.content.Context,java.lang.String,java.util.List) -> a
 com.oubowu.sdk.lib.PatchManipulateImp$1 -> com.oubowu.sdk.a.a$1:
@@ -6520,17 +6521,17 @@ com.oubowu.sdk.lib.PatchManipulateImp$1 -> com.oubowu.sdk.a.a$1:
     android.content.Context val$context -> c
     java.util.List val$patches -> d
     com.oubowu.sdk.lib.PatchManipulateImp this$0 -> e
-    84:84:void <init>(com.oubowu.sdk.lib.PatchManipulateImp,java.util.concurrent.CountDownLatch,android.content.Context,java.util.List) -> <init>
-    87:131:void done(java.util.List,cn.bmob.v3.exception.BmobException) -> done
-    84:84:void done(java.lang.Object,java.lang.Object) -> done
+    85:85:void <init>(com.oubowu.sdk.lib.PatchManipulateImp,java.util.concurrent.CountDownLatch,android.content.Context,java.util.List) -> <init>
+    88:132:void done(java.util.List,cn.bmob.v3.exception.BmobException) -> done
+    85:85:void done(java.lang.Object,java.lang.Object) -> done
 com.oubowu.sdk.lib.PatchManipulateImp$1$1 -> com.oubowu.sdk.a.a$1$1:
     com.meituan.robust.ChangeQuickRedirect changeQuickRedirect -> a
     java.lang.String val$filename -> b
     com.oubowu.sdk.lib.PatchManipulateImp$1 this$1 -> c
-    101:101:void <init>(com.oubowu.sdk.lib.PatchManipulateImp$1,java.lang.String) -> <init>
-    104:113:void done(java.lang.String,cn.bmob.v3.exception.BmobException) -> done
-    117:117:void onProgress(java.lang.Integer,long) -> onProgress
-    101:101:void done(java.lang.Object,cn.bmob.v3.exception.BmobException) -> done
+    102:102:void <init>(com.oubowu.sdk.lib.PatchManipulateImp$1,java.lang.String) -> <init>
+    105:114:void done(java.lang.String,cn.bmob.v3.exception.BmobException) -> done
+    118:118:void onProgress(java.lang.Integer,long) -> onProgress
+    102:102:void done(java.lang.Object,cn.bmob.v3.exception.BmobException) -> done
 com.oubowu.secret.NdkHelper -> com.oubowu.secret.NdkHelper:
     8:8:void <init>() -> <init>
     java.lang.String getStrFromCPlus() -> getStrFromCPlus

@@ -42,7 +42,9 @@ import cn.bmob.v3.listener.FindListener;
  */
 public class PatchManipulateImp extends PatchManipulate {
 
+    // 是否只做本地补丁的判断
     private boolean mOnlyLocal = true;
+    // 保存于本地的补丁的名称
     private String mSavePatchName;
 
     public PatchManipulateImp(boolean onlyLocal, String savePatchName) {
@@ -60,24 +62,25 @@ public class PatchManipulateImp extends PatchManipulate {
     @Override
     protected List<Patch> fetchPatchList(final Context context) {
 
-
         final List<Patch> patches = new ArrayList<>();
 
-
         if (mOnlyLocal) {
-            // 只是做本地判断的话，添加本地保存的补丁信息，然后返回
+            // 只是做本地判断的话
             if (!mSavePatchName.isEmpty()) {
+                // 名称不为空说明存在，添加本地保存的补丁信息，然后返回
                 addPatchInfo(context, mSavePatchName, patches);
             }
             return patches;
         }
 
+        // 由于下面做的是异步的网络请求下发补丁，所以使用CountDownLatch进行同步
         final CountDownLatch mCountDownLatch = new CountDownLatch(1);
 
-        //第一：默认初始化
+        //Bmob初始化
         Bmob.initialize(context.getApplicationContext(), "52e558b89195c84cd761afbeabc3df52");
 
         BmobQuery<com.oubowu.sdk.Patch> query = new BmobQuery<>();
+        // 通过sdkVersion查询此sdk版本的线上补丁
         query.addWhereEqualTo("sdkVersion", BuildConfig.VERSION_NAME);
         // 根据patchVersion字段降序显示数据
         query.order("-patchVersion");
@@ -91,19 +94,19 @@ public class PatchManipulateImp extends PatchManipulate {
                     mCountDownLatch.countDown();
                 } else {
                     if (list != null && list.size() > 0) {
+                        // 取最高补丁版本的补丁
                         final com.oubowu.sdk.Patch p = list.get(0);
                         Logger.e(p.toString());
                         final String filename = p.getPatchUrl().getFilename();
-                        // 若sp存的补丁名字跟下发的不一样的话，应用下发的补丁
+                        // 若sp存的补丁名称跟下发的最高版本的补丁名称不一样的话，下载并应用补丁；或者名称一样，但是本地没有此补丁，下载并应用补丁
                         if (!filename.equals(mSavePatchName) || !(new File(context.getFilesDir(), mSavePatchName).exists())) {
                             File saveFile = new File(context.getFilesDir(), filename);
                             if (!saveFile.exists()) {
-                                // 本地没有保存的话，下载
+                                // 本地没有保存的话，下载补丁
                                 p.getPatchUrl().download(saveFile, new DownloadFileListener() {
                                     @Override
                                     public void done(String s, BmobException e) {
                                         if (e != null) {
-                                            // 下载补丁失败，还是应用sp里面存的对应的补丁
                                             mCountDownLatch.countDown();
                                         } else {
                                             Logger.e("下载成功，" + s);
@@ -118,7 +121,7 @@ public class PatchManipulateImp extends PatchManipulate {
                                     }
                                 });
                             } else {
-                                // 本地已经保存了的话，直接使用
+                                // 本地已经保存了的话，保存名称，直接使用
                                 context.getSharedPreferences("com.oubowu.sdk.sp", Context.MODE_PRIVATE).edit().putString("pName", filename).apply();
                                 addPatchInfo(context, filename, patches);
                                 mCountDownLatch.countDown();
@@ -126,6 +129,7 @@ public class PatchManipulateImp extends PatchManipulate {
                         }
 
                     } else {
+                        // 此sdk版本没有补丁
                         mCountDownLatch.countDown();
                     }
                 }
@@ -133,6 +137,7 @@ public class PatchManipulateImp extends PatchManipulate {
         });
 
         try {
+            // 阻塞等待网络请求结束
             mCountDownLatch.await();
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -161,6 +166,13 @@ public class PatchManipulateImp extends PatchManipulate {
         //        return patches;
     }
 
+    /**
+     * 添加补丁信息
+     *
+     * @param context
+     * @param fileName
+     * @param patches
+     */
     private void addPatchInfo(Context context, String fileName, List<Patch> patches) {
 
         // 解密下发的已加密补丁

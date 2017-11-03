@@ -25,12 +25,12 @@
 #-renamesourcefileattribute SourceFile
 
 
-# ÃÀÍÅrobustÈÈĞŞ¸´
+# ç¾å›¢robustçƒ­ä¿®å¤
 -keep class com.meituan.robust.**{*;}
 
 -keep class com.orhanobut.logger.**{*;}
 
-# ±£ÁôÀà¼°ÆäËùÓĞ³ÉÔ±²»±»»ìÏı
+# ä¿ç•™ç±»åŠå…¶æ‰€æœ‰æˆå‘˜ä¸è¢«æ··æ·†
 -keep class com.oubowu.sdk.** {*;}
 
 -keep class com.oubowu.secret.** {*;}
@@ -40,12 +40,12 @@
 
 -keepattributes Signature
 
-# ²»»ìÏıBmobSDK
+# ä¸æ··æ·†BmobSDK
 -keep class cn.bmob.** {*;}
 
 -keep class cn.bmob.v3.** {*;}
 
-# ±£Ö¤¼Ì³Ğ×ÔBmobObject¡¢BmobUserÀàµÄJavaBean²»±»»ìÏı
+# ä¿è¯ç»§æ‰¿è‡ªBmobObjectã€BmobUserç±»çš„JavaBeanä¸è¢«æ··æ·†
 -keep class * extends cn.bmob.v3.BmobObject {
     *;
 }
@@ -54,13 +54,13 @@
 -keep class com.google.gson.** { *; }
 -keep class com.google.gson.JsonObject { *; }
 
-# Èç¹ûÄãÊ¹ÓÃÁËokhttp¡¢okioµÄ°ü£¬ÇëÌí¼ÓÒÔÏÂ»ìÏı´úÂë
+# å¦‚æœä½ ä½¿ç”¨äº†okhttpã€okioçš„åŒ…ï¼Œè¯·æ·»åŠ ä»¥ä¸‹æ··æ·†ä»£ç 
 -dontwarn com.squareup.okhttp.**
 -keep class com.squareup.okhttp.** { *;}
 -keep interface com.squareup.okhttp.** { *; }
 -dontwarn okio.**
 
-# Èç¹ûÄãĞèÒª¼æÈİ6.0ÏµÍ³£¬Çë²»Òª»ìÏıorg.apache.http.legacy.jar
+# å¦‚æœä½ éœ€è¦å…¼å®¹6.0ç³»ç»Ÿï¼Œè¯·ä¸è¦æ··æ·†org.apache.http.legacy.jar
  -dontwarn android.net.compatibility.**
  -dontwarn android.net.http.**
  -dontwarn com.android.internal.http.multipart.**

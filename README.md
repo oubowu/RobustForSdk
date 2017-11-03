@@ -390,3 +390,398 @@ for (String flavor : android.productFlavors.names) {
 至此我们的自定义打包task就编写完成了，执行assembleDevelopRelease任务，即可生成我们想要的jar包和aar包了
 
 ![](/pic/QQ截图20171101111237.png)
+
+# 3.补丁下发和加载的策略
+参考官方示例[PatchManipulateImp.java](https://github.com/Meituan-Dianping/Robust/blob/master/app/src/main/java/com/meituan/sample/PatchManipulateImp.java)来定制我们的下发加载策略
+
+![](/pic/补丁策略.png)
+
+如上流程图所述，首先去本地查询是否已经下发过补丁，若有优先加载本地补丁，这种场景是针对没有网络或者请求网络下发补丁失败导致无法修复的情况；然后去请求网络下发补丁的列表信息，sdk版本作为补丁的下发依据，然后补丁版本高的包含低版本的修复代码，我考虑是方便处理，不用加载多个补丁，对应项目发包的策略是一个大版本作为封版建立版本分支，后续此版本上线遇到的bug都基于这个分支做处理，直到下个版本上线合并修复的代码。
+
+具体代码实现如下：
+```
+        // 创建1个固定线程的线程池，用于串行进行本地补丁的加载和网络请求补丁然后加载的逻辑
+        ExecutorService fixedThreadPool = Executors.newFixedThreadPool(1);
+        // 读取本地保存的上次加载的补丁的名称
+        final String pName = context.getSharedPreferences("com.oubowu.sdk.sp", Context.MODE_PRIVATE).getString("pName", "");
+        if (!pName.isEmpty()) {
+            // 创建本地补丁加载的线程
+            PatchExecutor patchExecutor1 = new PatchExecutor(context.getApplicationContext(), new PatchManipulateImp(true, pName),...);
+            // 执行本地补丁加载的线程
+            fixedThreadPool.execute(patchExecutor1);
+        }
+
+        // 创建网络请求补丁然后加载的线程
+        PatchExecutor patchExecutor2 = new PatchExecutor(context.getApplicationContext(), new PatchManipulateImp(false, pName), ...);
+        fixedThreadPool.execute(patchExecutor2);
+```
+
+补丁的处理，这里我使用Bmob来进行补丁的下发，真正开发的话需要后台实现一个补丁下发接口
+```
+public class PatchManipulateImp extends PatchManipulate {
+
+    // 是否只做本地补丁的判断
+    private boolean mOnlyLocal = true;
+    // 保存于本地的补丁的名称
+    private String mSavePatchName;
+
+    public PatchManipulateImp(boolean onlyLocal, String savePatchName) {
+        mOnlyLocal = onlyLocal;
+        mSavePatchName = savePatchName;
+    }
+
+    /***
+     * connect to the network ,get the latest patches
+     * 联网获取最新的补丁
+     * @param context
+     *
+     * @return
+     */
+    @Override
+    protected List<Patch> fetchPatchList(final Context context) {
+
+        final List<Patch> patches = new ArrayList<>();
+
+        if (mOnlyLocal) {
+            // 只是做本地判断的话
+            if (!mSavePatchName.isEmpty()) {
+                // 名称不为空说明存在，添加本地保存的补丁信息，然后返回
+                addPatchInfo(context, mSavePatchName, patches);
+            }
+            return patches;
+        }
+
+        // 由于下面做的是异步的网络请求下发补丁，所以使用CountDownLatch进行同步
+        final CountDownLatch mCountDownLatch = new CountDownLatch(1);
+
+        //Bmob初始化
+        Bmob.initialize(context.getApplicationContext(), "52e558b89195c84cd761afbeabc3df52");
+
+        BmobQuery<com.oubowu.sdk.Patch> query = new BmobQuery<>();
+        // 通过sdkVersion查询此sdk版本的线上补丁
+        query.addWhereEqualTo("sdkVersion", BuildConfig.VERSION_NAME);
+        // 根据patchVersion字段降序显示数据
+        query.order("-patchVersion");
+        // query.setLimit(1);
+        query.findObjects(new FindListener<com.oubowu.sdk.Patch>() {
+            @Override
+            public void done(List<com.oubowu.sdk.Patch> list, BmobException e) {
+                if (e != null) {
+                    // 请求补丁列表数据失败
+                    Logger.e(e.getMessage());
+                    mCountDownLatch.countDown();
+                } else {
+                    if (list != null && list.size() > 0) {
+                        // 取最高补丁版本的补丁
+                        final com.oubowu.sdk.Patch p = list.get(0);
+                        Logger.e(p.toString());
+                        final String filename = p.getPatchUrl().getFilename();
+                        // 若sp存的补丁名称跟下发的最高版本的补丁名称不一样的话，下载并应用补丁；或者名称一样，但是本地没有此补丁，下载并应用补丁
+                        if (!filename.equals(mSavePatchName) || !(new File(context.getFilesDir(), mSavePatchName).exists())) {
+                            File saveFile = new File(context.getFilesDir(), filename);
+                            if (!saveFile.exists()) {
+                                // 本地没有保存的话，下载补丁
+                                p.getPatchUrl().download(saveFile, new DownloadFileListener() {
+                                    @Override
+                                    public void done(String s, BmobException e) {
+                                        if (e != null) {
+                                            mCountDownLatch.countDown();
+                                        } else {
+                                            Logger.e("下载成功，" + s);
+                                            context.getSharedPreferences("com.oubowu.sdk.sp", Context.MODE_PRIVATE).edit().putString("pName", filename).apply();
+                                            addPatchInfo(context, filename, patches);
+                                            mCountDownLatch.countDown();
+                                        }
+                                    }
+
+                                    @Override
+                                    public void onProgress(Integer integer, long l) {
+                                    }
+                                });
+                            } else {
+                                // 本地已经保存了的话，保存名称，直接使用
+                                context.getSharedPreferences("com.oubowu.sdk.sp", Context.MODE_PRIVATE).edit().putString("pName", filename).apply();
+                                addPatchInfo(context, filename, patches);
+                                mCountDownLatch.countDown();
+                            }
+                        }
+
+                    } else {
+                        // 此sdk版本没有补丁
+                        mCountDownLatch.countDown();
+                    }
+                }
+            }
+        });
+
+        try {
+            // 阻塞等待网络请求结束
+            mCountDownLatch.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return patches;
+    }
+
+    /**
+     * 添加补丁信息
+     *
+     * @param context
+     * @param fileName
+     * @param patches
+     */
+    private void addPatchInfo(Context context, String fileName, List<Patch> patches) {
+        // 解密下发的已加密补丁并且返回解密后的文件路径，使用ndk保证解密安全性
+        String dPatchPath = NdkHelper.p(context, fileName, false);
+        File dPatchFile = new File(dPatchPath);
+        if (dPatchFile.exists()) {
+            // 解密文件存在的话，添加到补丁列表
+            Patch patch = new Patch();
+            patch.setName(dPatchFile.getName().replace(".jar", ""));
+            patch.setLocalPath(dPatchFile.getPath().replace(".jar", ""));
+            patch.setPatchesInfoImplClassFullName("com.oubowu.sdk.lib.PatchManipulateImp.PatchesInfoImpl");
+            patches.add(patch);
+        }
+    }
+
+    /**
+     * @param context
+     * @param patch
+     * @return you can verify your patches here
+     */
+    @Override
+    protected boolean verifyPatch(Context context, Patch patch) {
+        //do your verification, put the real patch to patch
+        //放到app的私有目录
+        patch.setTempPath(context.getCacheDir() + File.separator + "robust" + File.separator + patch.getName());
+        //in the sample we just copy the file
+        try {
+            copy(patch.getLocalPath(), patch.getTempPath());
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("copy source patch to local patch error, no patch execute in path " + patch.getTempPath());
+        }
+
+        // 删除解密的本地补丁
+        patch.delete(patch.getLocalPath());
+
+        return true;
+    }
+
+    ...
+
+}
+```
+
+# 4.补丁的生成和使用
+在SdkTest.java我写了一个会抛出NumberFormatException的方法
+```
+    public static void callBugMethod(Context context) {
+
+        String strFromCPlus = NdkHelper.getStrFromCPlus();
+
+        Logger.e(strFromCPlus);
+
+        int i = Integer.parseInt(strFromCPlus);
+
+    }
+```
+
+然后修复callBugMethod方法，添加一个静态内部类
+```
+    @Modify
+    public static void callBugMethod(Context context) {
+
+        String strFromCPlus = NdkHelper.getStrFromCPlus();
+
+        Logger.e(strFromCPlus);
+
+        try {
+            int i = Integer.parseInt(strFromCPlus);
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+            Logger.e("我使用Robust热更新把空指针修复啦！！！");
+        }
+
+        MyClass.call();
+
+    }
+
+    @Add
+    public static class MyClass {
+        public static void call() {
+            Logger.e("我使用Robust热更新新增了一个静态内部类");
+        }
+    }
+
+```
+
+将 \RobustForSdk\gradle.properties isPatchModule设为true，将\sdk\robustjar\develop\release文件夹下的mapping.txt以及methodsMap.robust放到\sdk\robust文件夹
+```
+    # Application模式，Robust需要是Application才能插入代码和打补丁
+    isAppModule=true
+    # Application模式下开启这个就可以打补丁
+    isPatchModule=true
+```
+
+执行assembleDevelopRelease，得到以下提示，即说明生成补丁成功
+```
+* What went wrong:
+Execution failed for task ':sdk:transformClassesWithAutoPatchTransformForDevelopRelease'.
+> auto patch end successfully
+```
+![](/pic/QQ截图20171102112715.png)
+
+补丁为了保证安全性，需要加密后再上传到Bmob后台，为了方便操作，我用MFC写了个Window程序，可以看下 [AesWindowsApplication](https://github.com/oubowu/AesWindowsApplication)
+
+![](/pic/加解密工具.png)
+
+上传到Bmob后台
+
+![](/pic/Bmob后台.png)
+
+在app模块使用library-develop-release.aar，在主页面MainActivity.class进行SDK初始化，SdkTest.init会执行补丁请求和加载的逻辑
+```
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        mTvHello = (TextView) findViewById(R.id.tv_hello);
+
+        findViewById(R.id.bt_sdk).setOnClickListener(this);
+
+        checkPermissionAndCallSdk();
+
+    }
+
+    private void checkPermissionAndCallSdk() {
+        boolean checkPermission = MPermissionUtils.getInstance()
+                .checkPermission(this, REQUEST_PERMISSION_SUCCESS, Manifest.permission.READ_PHONE_STATE, Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        Manifest.permission.READ_EXTERNAL_STORAGE);
+        if (checkPermission) {
+            SdkTest.init(this);
+        }
+    }
+```
+
+第一次启动APP并且断网的情况下，在点击事件调用SDK有bug的方法
+```
+    @Override
+    public void onClick(View v) {
+        switch (v.getId()) {
+            case R.id.bt_sdk:
+                SdkTest.callBugMethod(this);
+                mTvHello.setText(NdkHelper.getStrFromCPlus());
+                break;
+            default:
+                break;
+        }
+    }
+```
+
+Logcat打印以下字符串转换整型抛出的异常
+```
+    FATAL EXCEPTION: main
+    Process: com.oubowu.robustforsdk, PID: 18306
+    java.lang.NumberFormatException: Invalid int: "Hello from C++"
+```
+
+将网络打开，第二次启动APP，网络请求下发正常的话，打印出我们使用的补丁版本是3，对应SDK版本是2.6.0；下载成功后放在/data/data/(包名)/files；并且应用成功了
+```
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Thread: main
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ From.Code  (PolicyQuery.java:264)
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: │    a$1.done  (PatchManipulateImp.java:95)
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Patch{sdkVersion='2.6.0', patchVersion='3', patchUrl=http://bmob-cdn-14435.b0.upaiyun.com/2017/10/16/37e20fe240ae64a2803b3d5ed7047be9.jar} com.oubowu.sdk.Patch@42588d90
+11-03 09:48:43.893 19711-19711/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+11-03 09:51:35.513 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:51:35.513 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Thread: main
+11-03 09:51:35.513 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:51:35.523 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ of.onPostExecute  (BmobFileDownloader.java:2095)
+11-03 09:51:35.523 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │    a$1$1.done  (PatchManipulateImp.java:109)
+11-03 09:51:35.523 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:51:35.523 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ 下载成功，/data/data/com.oubowu.robustforsdk/files/e-patch-2.6.0-4.jar
+11-03 09:51:35.523 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+11-03 09:51:35.533 20875-20875/com.oubowu.robustforsdk E/secret: /data/data/com.oubowu.robustforsdk/files/e-patch-2.6.0-4.jar
+11-03 09:51:35.533 20875-20875/com.oubowu.robustforsdk E/secret: /data/data/com.oubowu.robustforsdk/files/d-e-patch-2.6.0-4.jar
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Thread: pool-1-thread-1
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ PatchExecutor.applyPatchList  (PatchExecutor.java:71)
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: │    SdkTest$3.onPatchApplied  (SdkTest.java:97)
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ PatchExecutor
+11-03 09:51:35.623 20875-20891/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+```
+
+这时候点击点击事件，可以从log看到已经使用了修复的代码
+```
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err: java.lang.NumberFormatException: Invalid int: "Hello from C++"
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.Integer.invalidInt(Integer.java:137)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.Integer.parse(Integer.java:374)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.Integer.parseInt(Integer.java:365)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.Integer.parseInt(Integer.java:331)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.oubowu.sdk.lib.PatchManipulateImp.SdkTestPatch.callBugMethod(SdkTestPatch.java:163)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.oubowu.sdk.lib.PatchManipulateImp.SdkTestPatchControl.accessDispatch(PatchTemplate.java)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.meituan.robust.PatchProxy.accessDispatch(PatchProxy.java:61)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.oubowu.sdk.SdkTest.callBugMethod(SdkTest.java)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.oubowu.robustforsdk.MainActivity.onClick(MainActivity.java:46)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.view.View.performClick(View.java:4444)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.view.View$PerformClick.run(View.java:18457)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.os.Handler.handleCallback(Handler.java:733)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.os.Handler.dispatchMessage(Handler.java:95)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.os.Looper.loop(Looper.java:136)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at android.app.ActivityThread.main(ActivityThread.java:5113)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.reflect.Method.invokeNative(Native Method)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at java.lang.reflect.Method.invoke(Method.java:515)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.android.internal.os.ZygoteInit$MethodAndArgsCaller.run(ZygoteInit.java:796)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:612)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk W/System.err:     at dalvik.system.NativeStart.main(Native Method)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Thread: main
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ SdkTestPatchControl.accessDispatch  (PatchTemplate.java:-1)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │    SdkTestPatch.callBugMethod  (SdkTestPatch.java:166)
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ 我使用Robust热更新把空指针修复啦！！！
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk D/robust: invoke static  method is       No:  23  e
+11-03 09:53:46.213 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ┌────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ Thread: main
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ SdkTestPatch.callBugMethod  (SdkTestPatch.java:169)
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │    SdkTest$MyClass.call  (SdkTest.java:176)
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: ├┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: │ 我使用Robust热更新新增了一个静态内部类
+11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+```
+
+# 以上就是我实践SDK热修复的思路和方法，希望能给读者带来一些用处。
+
+## License
+
+    Copyright 2017 Oubowu
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+
+
+
+
+

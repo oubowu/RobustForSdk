@@ -31,10 +31,12 @@ public class SdkTest {
         });
         Logger.e(BuildConfig.FLAVOR);
 
-        ExecutorService fixedThreadPool;
+        //  创建1个固定线程的线程池，用于串行进行本地补丁的加载和网络请求补丁然后加载的逻辑
+        ExecutorService fixedThreadPool = Executors.newFixedThreadPool(1);
+        // 读取本地保存的上次加载的补丁的名称
         final String pName = context.getSharedPreferences("com.oubowu.sdk.sp", Context.MODE_PRIVATE).getString("pName", "");
         if (!pName.isEmpty()) {
-            fixedThreadPool = Executors.newFixedThreadPool(2);
+            // 创建本地补丁加载的线程
             PatchExecutor patchExecutor1 = new PatchExecutor(context.getApplicationContext(), new PatchManipulateImp(true, pName), new RobustCallBack() {
                 @Override
                 public void onPatchListFetched(boolean result, boolean isNet, List<Patch> patches) {
@@ -68,12 +70,11 @@ public class SdkTest {
                     Logger.e("--PatchExecutor", "RobustCallBack提示异常: " + "throwable=" + throwable.getMessage() + ";where=" + where);
                 }
             });
+            // 执行本地补丁加载的线程
             fixedThreadPool.execute(patchExecutor1);
-        } else {
-            fixedThreadPool = Executors.newFixedThreadPool(1);
         }
 
-        // 初始化的时候看有木有补丁可以使用
+        // 创建网络请求补丁然后加载的线程
         PatchExecutor patchExecutor2 = new PatchExecutor(context.getApplicationContext(), new PatchManipulateImp(false, pName), new RobustCallBack() {
             @Override
             public void onPatchListFetched(boolean result, boolean isNet, List<Patch> patches) {
