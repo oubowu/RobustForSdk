@@ -391,7 +391,7 @@ for (String flavor : android.productFlavors.names) {
 
 ![](/pic/QQ截图20171101111237.png)
 
-# 3.补丁下发和加载的策略
+## 3.补丁下发和加载的策略
 参考官方示例[PatchManipulateImp.java](https://github.com/Meituan-Dianping/Robust/blob/master/app/src/main/java/com/meituan/sample/PatchManipulateImp.java)来定制我们的下发加载策略
 
 ![](/pic/补丁策略.png)
@@ -574,7 +574,7 @@ public class PatchManipulateImp extends PatchManipulate {
 }
 ```
 
-# 4.补丁的生成和使用
+## 4.补丁的生成和使用
 在SdkTest.java我写了一个会抛出NumberFormatException的方法
 ```
     public static void callBugMethod(Context context) {
@@ -763,7 +763,7 @@ Logcat打印以下字符串转换整型抛出的异常
 11-03 09:53:46.223 20875-20875/com.oubowu.robustforsdk E/PRETTY_LOGGER: └────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 ```
 
-# 以上就是我实践SDK热修复的思路和方法，希望能给读者带来一些用处。
+**以上就是我实践SDK热修复的思路和方法，希望能给读者带来一些用处。**
 
 ## License
 
